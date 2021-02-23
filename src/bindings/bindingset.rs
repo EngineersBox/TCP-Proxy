@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::collections::HashSet;
 use std::vec::Vec;
 use std::fs;
@@ -26,31 +26,34 @@ impl BindingRule {
     }
 }
 
-pub struct RuleSet {
+pub struct BindingSet {
     pub id: String,
-    pub rules: HashSet<BindingRule>,
+    pub applied: bool,
+    pub bindings: HashSet<BindingRule>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct JSONRule {
+struct JSONBinding {
+    name: String,
     from: String,
     to: String,
 }
 
 #[derive(Serialize, Deserialize)]
-struct JSONRuleSet {
-    rules: Vec<JSONRule>
+struct JSONBindingSet {
+    rules: Vec<JSONBinding>
 }
 
-impl RuleSet {
-    pub fn new(id: String) -> RuleSet {
-        RuleSet {
+impl BindingSet {
+    pub fn new(id: String) -> BindingSet {
+        BindingSet {
             id,
-            rules: HashSet::new(),
+            applied: false,
+            bindings: HashSet::new(),
         }
     }
     pub fn add_rule(&mut self, rule: BindingRule) -> bool {
-        self.rules.insert(rule)
+        self.bindings.insert(rule)
     }
     pub fn add_rules(&mut self, rules: Vec<BindingRule>) -> Vec<bool> {
         let mut rules_present: Vec<bool> = Vec::new();
@@ -59,17 +62,21 @@ impl RuleSet {
         }
         return rules_present;
     }
-    pub fn from_file(id: String, filename: String) -> RuleSet {
+    pub fn from_file(id: String, filename: String) -> BindingSet {
         let data = fs::read_to_string(filename).expect("Unable to read file");
-        let parsed: JSONRuleSet = serde_json::from_str(data.as_str()).unwrap();
-        RuleSet {
+        let parsed: JSONBindingSet = serde_json::from_str(data.as_str()).unwrap();
+        BindingSet {
             id,
-            rules: assemble_rules_from_json(parsed),
+            applied: false,
+            bindings: assemble_rules_from_json(parsed),
         }
+    }
+    pub fn set_applied(&mut self, new_applied_setting: bool) {
+        self.applied = new_applied_setting;
     }
 }
 
-fn assemble_rules_from_json(json_val: JSONRuleSet) -> HashSet<BindingRule> {
+fn assemble_rules_from_json(json_val: JSONBindingSet) -> HashSet<BindingRule> {
     let mut binding_rule_set: HashSet<BindingRule> = HashSet::new();
     for rule in json_val.rules {
         binding_rule_set.insert(BindingRule::from_to_string(rule.from, rule.to));

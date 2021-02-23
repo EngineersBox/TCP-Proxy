@@ -63,7 +63,7 @@ impl BindingSet {
         return rules_present;
     }
     pub fn from_file(id: String, filename: String) -> BindingSet {
-        let data = fs::read_to_string(filename).expect("Unable to read file");
+        let data: String = fs::read_to_string(filename).expect("Unable to read file");
         let parsed: JSONBindingSet = serde_json::from_str(data.as_str()).unwrap();
         BindingSet {
             id,

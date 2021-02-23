@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use java_properties::PropertiesIter;
+use java_properties::{PropertiesIter, PropertiesError};
 use std::fs::File;
 use std::io::BufReader;
 
@@ -19,14 +19,14 @@ impl Config {
         }
     }
     pub fn read(&mut self){
-        let path = Path::new(self.filename.as_str());
-        let file = match File::open(&path) {
+        let path: &Path = Path::new(self.filename.as_str());
+        let file: File = match File::open(&path) {
             Err(_) => panic!("{}", exceptions::FileError{filename: self.filename.clone()}),
             Ok(file) => file,
         };
 
         self.properties = HashMap::new();
-        let err = PropertiesIter::new(BufReader::new(file)).read_into(|k, v| {
+        let err: Option<PropertiesError> = PropertiesIter::new(BufReader::new(file)).read_into(|k, v| {
             self.properties.insert(k, v);
         }).err();
         if err.is_some() {
@@ -40,7 +40,7 @@ impl Config {
                 0:exceptions::InvalidConfigPropertyKeyError{key},
             });
         }
-        let value = self.properties.get(key.as_str());
+        let value: Option<&String> = self.properties.get(key.as_str());
         if value.is_none() {
             return Err(exceptions::ConfigPropertiesError::MissingConfigPropertyError{
                 0:exceptions::MissingConfigPropertyError{property: key.clone()},

@@ -38,3 +38,16 @@ macro_rules! if_let_ok {
         };
     }
 }
+
+#[macro_export]
+macro_rules! try_except_return {
+    ($connection_statement:expr, $msg:literal) => {
+        match $connection_statement {
+            Ok(value) => value,
+            Err(e) => {
+                error!(crate::LOGGER, "{}: {}", $msg, e);
+                return;
+            },
+        }
+    }
+}

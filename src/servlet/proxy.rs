@@ -8,6 +8,7 @@ use std::thread;
 use crate::servlet::request_metadata::RequestMetadata;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
+use crate::try_except_return;
 
 pub struct ListenerBinding {
     pub listener: *const TcpListener,
@@ -21,18 +22,6 @@ pub struct Proxy {
 }
 
 static THREADPOOL_SIZE_KEY: &'static str = "threadpool_size";
-
-macro_rules! try_except_return {
-    ($connection_statement:expr, $msg:literal) => {
-        match $connection_statement {
-            Ok(value) => value,
-            Err(e) => {
-                error!(crate::LOGGER, "{}: {}", $msg, e);
-                return;
-            },
-        }
-    }
-}
 
 impl Proxy {
     pub fn new(configuration: Config) -> Proxy {

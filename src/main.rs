@@ -54,7 +54,7 @@ fn initialize_logging() ->  slog::Logger {
         .overflow_strategy(OverflowStrategy::Block)
         .build()
         .fuse();
-    let log: Logger = Logger::root(both, o!("version" => env!("CARGO_PKG_VERSION")));
+    let log: Logger = Logger::root(both, o!());
 
     info!(log,"{}", directory_creation_message);
     log

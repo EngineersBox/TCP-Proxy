@@ -537,6 +537,7 @@ dependencies = [
  "java-properties",
  "lazy_static",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "slog",

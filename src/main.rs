@@ -1,7 +1,21 @@
+use std::fs::{File, OpenOptions};
+use std::fs;
+use std::sync::Mutex;
+
+use lazy_static::lazy_static;
+use slog::{Drain, Duplicate, Fuse, Logger};
+use slog_async::{Async, OverflowStrategy};
+use slog_json::Json;
+use slog_term::{FullFormat, TermDecorator};
+
+use configuration::config;
+use servlet::proxy;
+use traffic::bindingset;
+
 mod configuration;
-mod bindings;
 mod servlet;
 mod traffic;
+mod macros;
 
 #[macro_use]
 extern crate slog;
@@ -9,19 +23,7 @@ extern crate slog_term;
 extern crate slog_async;
 extern crate slog_json;
 extern crate lazy_static;
-
-use configuration::config;
-use bindings::bindingset;
-use servlet::proxy;
-use std::fs::{File, OpenOptions};
-use std::fs;
-use std::sync::Mutex;
-use slog::{Drain, Logger, Fuse, Duplicate};
-
-use lazy_static::lazy_static;
-use slog_async::{OverflowStrategy, Async};
-use slog_term::{TermDecorator, FullFormat};
-use slog_json::Json;
+extern crate regex;
 
 fn initialize_logging() ->  slog::Logger {
     let log_path: &str = "logs/";
@@ -64,7 +66,7 @@ lazy_static! {
 
 fn main() {
     let properties: config::Config = config::Config::new(String::from("config/config.properties"));
-    let mut binding_set: bindingset::BindingSet = bindingset::BindingSet::from_file(String::from("1"), String::from("config/bindings.json"));
+    let mut binding_set: bindingset::BindingSet = bindingset::BindingSet::from_file(String::from("1"), String::from("config/traffic.json"));
     binding_set.set_applied(true);
     let mut tcp_proxy: proxy::Proxy = proxy::Proxy::new(properties);
     tcp_proxy.start(binding_set);

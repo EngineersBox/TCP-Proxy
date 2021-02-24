@@ -1,0 +1,32 @@
+{
+	"bindings": [
+		{
+			"name": "test1",
+			"from": "127.0.0.1:3000",
+			"to": "127.0.0.1:8000",
+			"rules": {
+				"ingress": [
+					{
+						"kind": "HEADER",
+						"header_mappings": [
+							{
+								"key": "content-type",
+								"value": "application/json"
+							}
+						]
+					}
+				],
+				"egress": [
+					{
+						"kind": "VERSION",
+						"version_float": 1.1
+					},
+					{
+						"kind": "URL",
+						"url_wildcard": "https\\:\\/\\/.\\.instaclustr\\.com"
+					}
+				]
+			}
+		}
+	]
+}

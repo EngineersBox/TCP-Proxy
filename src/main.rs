@@ -24,6 +24,7 @@ extern crate slog_async;
 extern crate slog_json;
 extern crate lazy_static;
 extern crate regex;
+extern crate pnet;
 
 fn initialize_logging() ->  slog::Logger {
     let log_path: &str = "logs/";

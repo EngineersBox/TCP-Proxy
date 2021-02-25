@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write, Read};
 use std::net::SocketAddr;
 use std::net::{TcpListener, TcpStream};
 use crate::configuration::config::Config;
@@ -9,6 +9,7 @@ use crate::servlet::request_metadata::RequestMetadata;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use crate::try_except_return;
+use crate::traffic::packet::stream_packet_collector::StreamPacketCollector;
 
 pub struct ListenerBinding {
     pub listener: *const TcpListener,
@@ -20,6 +21,8 @@ pub struct Proxy {
     pub thread_pool: ThreadPool,
     pub listeners: Vec<ListenerBinding>
 }
+
+type Byte = u8;
 
 static THREADPOOL_SIZE_KEY: &'static str = "threadpool_size";
 
@@ -69,41 +72,52 @@ impl Proxy {
             let metadata_clone_backward: Arc<Mutex<RequestMetadata>> = metadata.clone();
 
             thread::spawn(move || Proxy::forward_thread_handler(stream_forward, sender_forward, metadata_clone_forward));
-            thread::spawn(move || Proxy::backward_thread_handler(stream_backward, sender_backward, metadata_clone_backward));
+            thread::spawn(move || Proxy::backward_thread_capture_handler(stream_backward, sender_backward, metadata_clone_backward));
         }
     }
     fn forward_thread_handler(stream_forward: TcpStream, mut sender_forward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
         let mut stream_forward: BufReader<TcpStream> = BufReader::new(stream_forward);
+        let mut buffer: &[Byte];
+        let mut buffer_length: usize;
         loop {
-            let length: usize = {
-                let buffer: &[u8] = stream_forward.fill_buf().unwrap();
-                let length: usize = buffer.len();
-                if buffer.is_empty() {
-                    debug!(crate::LOGGER, "Client closed connection");
-                    return;
-                }
-                sender_forward.write_all(&buffer).expect("Failed to write to remote");
-                let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
-                // let reqest_content = String::from_utf8_lossy(&buffer).chars().as_str();
-                info!(crate::LOGGER, "TRAFFIC LOG [EGRESS] [{}]", md.id);
-                md.tag_request_start_time();
-                sender_forward.flush().expect("Failed to flush remote");
-                length
-            };
-            stream_forward.consume(length);
+            buffer = stream_forward.fill_buf().unwrap();
+            buffer_length = buffer.len();
+            if buffer.is_empty() {
+                debug!(crate::LOGGER, "Client closed connection");
+                return;
+            }
+            sender_forward.write_all(&buffer).expect("Failed to write to remote");
+            let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
+            // let request_content = String::from_utf8_lossy(&buffer).chars().as_str();
+            debug!(crate::LOGGER, "REQUEST CONTENT [EGRESS]: {}", String::from_utf8_lossy(&buffer).chars().as_str());
+            info!(crate::LOGGER, "TRAFFIC LOG [EGRESS] [{}]", md.id);
+            md.tag_request_start_time();
+            sender_forward.flush().expect("Failed to flush remote");
+            stream_forward.consume(buffer_length);
         }
     }
-    fn backward_thread_handler(mut stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
+    // "Capture" refers to reading all packets and sending as one packet to client
+    fn backward_thread_capture_handler(mut stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
+        let mut packet_collector: StreamPacketCollector = StreamPacketCollector::new(stream_backward, sender_backward);
+        let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
+        packet_collector.read_all_packets_from_stream();
+        md.tag_response_end_time();
+        info!(crate::LOGGER, "TRAFFIC LOG [INGRESS] [{}] [Packets: {}] [{} ms]", md.id, packet_collector.packet_count, md.get_request_response_duration());
+        debug!(crate::LOGGER, "RESPONSE CONTENT [INGRESS]: {}", packet_collector.buffer_to_string().chars().as_str());
+        debug!(crate::LOGGER, "Remote closed connection");
+    }
+    // "Progressive" refers to forwarding all packets as they come through
+    fn backward_thread_progressive_handler(mut stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
         let mut sender_backward: BufReader<TcpStream> = BufReader::new(sender_backward);
         loop {
             let length: usize = {
-                let buffer: &[u8] = sender_backward.fill_buf().unwrap();
+                let buffer: &[Byte] = sender_backward.fill_buf().unwrap();
                 let length: usize = buffer.len();
+                let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
                 if buffer.is_empty() {
-                    let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
                     md.tag_response_end_time();
                     // let response_content = String::from_utf8_lossy(&buffer).chars().as_str();
-                    info!(crate::LOGGER, "TRAFFIC LOG [INGRESS] [{}] [{} ms]", md.id, md.get_request_response_duration());
+                    info!(crate::LOGGER, "TRAFFIC LOG [INGRESS] [{}] [Packets: {}] [{} ms]", md.id, md.response_packet_count, md.get_request_response_duration());
                     debug!(crate::LOGGER, "Remote closed connection");
                     return;
                 }
@@ -112,6 +126,8 @@ impl Proxy {
                     return;
                 }
 
+                debug!(crate::LOGGER, "RESPONSE CONTENT [EGRESS]: {}", String::from_utf8_lossy(&buffer).chars().as_str());
+                md.response_packet_count += 1;
                 stream_backward.flush().expect("Failed to flush locally");
                 length
             };

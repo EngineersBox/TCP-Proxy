@@ -4,6 +4,7 @@ pub(crate) struct RequestMetadata {
     pub id: uuid::Uuid,
     pub request_start: u64,
     pub response_end: u64,
+    pub response_packet_count: i32,
 }
 
 impl RequestMetadata {
@@ -12,6 +13,7 @@ impl RequestMetadata {
             id: uuid::Uuid::new_v4(),
             request_start: 0,
             response_end: 0,
+            response_packet_count: 0,
         }
     }
     pub fn tag_request_start_time(&mut self) {

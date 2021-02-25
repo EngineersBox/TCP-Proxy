@@ -51,3 +51,16 @@ macro_rules! try_except_return {
         }
     }
 }
+
+#[macro_export]
+macro_rules! try_except_return_default {
+    ($connection_statement:expr, $msg:literal, $default_value:expr) => {
+        match $connection_statement {
+            Ok(value) => value,
+            Err(e) => {
+                error!(crate::LOGGER, "{}: {}", $msg, e);
+                $default_value
+            },
+        }
+    }
+}

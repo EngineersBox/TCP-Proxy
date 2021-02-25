@@ -1,8 +1,8 @@
 use std::io::{Write, Read, BufReader, BufRead};
 use std::net::TcpStream;
 
-use crate::try_except_return_default;
-use crate::try_except_return;
+use crate::{try_except_return_default, try_except_return, inc, option_same_block};
+use std::borrow::Borrow;
 
 type Byte = u8;
 
@@ -22,21 +22,22 @@ impl StreamPacketCollector {
             packet_count: 0,
         }
     }
-    pub fn read_all_packets_from_stream(&mut self) -> usize {
+    pub fn read_all_packets_from_stream(&mut self) {
         loop {
             let buffer: &[Byte] = self.sender.fill_buf().unwrap();
-            let mut length: usize = buffer.len();
             if buffer.is_empty() {
-                if self.receiver.write_all(self.packet_content_buffer.as_slice()).is_err() {
-                    debug!(crate::LOGGER, "Connection closed");
-                    return self.packet_content_buffer.len();
-                }
-                self.flush_stream_to_remote();
-                return self.packet_content_buffer.len();
+                return;
             }
+            let length: usize = buffer.len();
             self.packet_content_buffer.extend_from_slice(buffer);
             self.sender.consume(length);
-            self.packet_count += 1;
+            inc!{self.packet_count};
+        }
+    }
+    pub fn write_buffer_to_remote(&mut self) -> Option<usize> {
+        option_same_block!{
+            self.receiver.write_all(self.packet_content_buffer.as_slice()).is_err(),
+            self.packet_content_buffer.len()
         }
     }
     pub fn flush_stream_to_remote(&mut self) {

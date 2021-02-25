@@ -1,11 +1,7 @@
 #[macro_export]
 macro_rules! ternary {
-    ($c:stmt, $v1:expr, $v2:expr) => {
-        if $c {
-            return $v1
-        } else {
-            return $v2
-        }
+    ($condition:expr, $v1:expr, $v2:expr) => {
+        if $condition { $v1 } else { $v2 };
     };
 }
 
@@ -62,5 +58,22 @@ macro_rules! try_except_return_default {
                 $default_value
             },
         }
+    }
+}
+
+#[macro_export]
+macro_rules! inc {
+    ($variable:expr) => {
+        $variable += 1;
+    }
+}
+
+#[macro_export]
+macro_rules! option_same_block {
+    ($conditional:expr, $some_statement:expr) => {
+        if $conditional {
+            return Option::Some($some_statement);
+        }
+        return Option::None;
     }
 }

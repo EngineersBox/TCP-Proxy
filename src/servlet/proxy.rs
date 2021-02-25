@@ -1,15 +1,16 @@
-use std::io::{BufRead, BufReader, Write, Read};
 use std::net::SocketAddr;
 use std::net::{TcpListener, TcpStream};
-use crate::configuration::config::Config;
 use rayon::ThreadPool;
+use std::{thread, fmt};
+use std::sync::{Arc, Mutex};
+use std::str::FromStr;
+use std::borrow::Borrow;
+
+use crate::configuration::config::Config;
 use crate::traffic::bindingset;
-use std::thread;
 use crate::servlet::request_metadata::RequestMetadata;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
 use crate::{try_except_return, inc, ternary};
-use crate::traffic::packet::stream_packet_collector::StreamPacketCollector;
+use crate::servlet::threading::thread_handler::ThreadHandler;
 
 pub struct ListenerBinding {
     pub id: u64,
@@ -19,25 +20,62 @@ pub struct ListenerBinding {
 
 
 pub struct Proxy {
+    pub thread_handler_type: ThreadHandlerType,
     pub thread_pool: ThreadPool,
     pub listeners: Vec<ListenerBinding>
 }
 
 type Byte = u8;
 
-static THREADPOOL_SIZE_KEY: &'static str = "threadpool_size";
+static THREAD_POOL_SIZE_KEY: &'static str = "thread_pool_size";
+static HANDLER_TYPE_KEY: &'static str = "thread_handler_type";
+
+#[derive(Clone, Copy)]
+pub enum ThreadHandlerType {
+    CAPTURE,
+    PROGRESSIVE,
+}
+
+impl fmt::Display for ThreadHandlerType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "could not read file: {}", match self {
+            ThreadHandlerType::CAPTURE => "CAPTURE",
+            ThreadHandlerType::PROGRESSIVE => "PROGRESSIVE"
+        })
+    }
+}
+
+impl FromStr for ThreadHandlerType {
+    type Err = ();
+    fn from_str(input: &str) -> Result<ThreadHandlerType, Self::Err> {
+        match input {
+            "CAPTURE"  => Ok(ThreadHandlerType::CAPTURE),
+            "PROGRESSIVE"  => Ok(ThreadHandlerType::PROGRESSIVE),
+            _ => Ok(ThreadHandlerType::CAPTURE),
+        }
+    }
+}
+
+type ThreadHandlerMethod = fn(TcpStream, TcpStream, Arc<Mutex<RequestMetadata>>);
 
 impl Proxy {
     pub fn new(configuration: Config) -> Proxy {
-        let threadpool_size_str:Option<&String> = configuration.properties.get(THREADPOOL_SIZE_KEY);
-        let threadpool_size: usize = ternary!{
-            threadpool_size_str.is_none(),
+        let thread_pool_size_str:Option<&String> = configuration.properties.get(THREAD_POOL_SIZE_KEY);
+        let thread_pool_size: usize = ternary!{
+            thread_pool_size_str.is_none(),
             50,
-            threadpool_size_str.unwrap().parse::<usize>().unwrap()
+            thread_pool_size_str.unwrap().parse::<usize>().unwrap()
         };
-        debug!{crate::LOGGER, "Creating proxy thread pool of size: {}", threadpool_size};
+        let thread_handler_type_str: Option<&String> = configuration.properties.get(HANDLER_TYPE_KEY);
+        let thread_handler_type: ThreadHandlerType = ternary!{
+            thread_handler_type_str.is_none(),
+            ThreadHandlerType::PROGRESSIVE,
+            thread_handler_type_str.unwrap().parse::<ThreadHandlerType>().unwrap()
+        };
+        debug!{crate::LOGGER, "Creating proxy thread pool of size: {}", thread_pool_size};
         Proxy {
-            thread_pool: rayon::ThreadPoolBuilder::new().num_threads(threadpool_size)
+            thread_handler_type,
+            thread_pool: rayon::ThreadPoolBuilder::new().num_threads(thread_pool_size)
                 .spawn_handler(|thread| {
                     let mut b = std::thread::Builder::new();
                     if let Some(name) = thread.name() {
@@ -63,12 +101,13 @@ impl Proxy {
                 listener: &listener,
                 rule,
             });
-            debug!{crate::LOGGER, "Invoked acceptor thread for listener [{}]", incremental_listener_id};
-            self.thread_pool.spawn(move || Proxy::invoke_acceptor_handler(&mut listener, to_addr));
+            debug!{crate::LOGGER, "Invoked acceptor thread for listener [{}] using hadler type [{}]", incremental_listener_id, self.thread_handler_type};
+            let handler_type: ThreadHandlerType = self.thread_handler_type;
+            self.thread_pool.spawn(move || Proxy::invoke_acceptor_handler(&mut listener, to_addr, handler_type));
             inc!{incremental_listener_id};
         }
     }
-    fn invoke_acceptor_handler(listener_forward: &mut TcpListener, proxy_to: SocketAddr) {
+    fn invoke_acceptor_handler(listener_forward: &mut TcpListener, proxy_to: SocketAddr, handler_type: ThreadHandlerType) {
         loop {
             let (stream_forward, _addr) = listener_forward.accept().expect("Failed to accept connection");
             debug!(crate::LOGGER, "New connection");
@@ -81,85 +120,19 @@ impl Proxy {
             let metadata_clone_forward: Arc<Mutex<RequestMetadata>> = metadata.clone();
             let metadata_clone_backward: Arc<Mutex<RequestMetadata>> = metadata.clone();
 
-            thread::spawn(move || Proxy::forward_thread_handler(stream_forward, sender_forward, metadata_clone_forward));
-            thread::spawn(move || Proxy::backward_thread_capture_handler(stream_backward, sender_backward, metadata_clone_backward));
-        }
-    }
-    fn forward_thread_capture_handler(stream_forward: TcpStream, mut sender_forward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
-        let mut packet_collector: StreamPacketCollector = StreamPacketCollector::new(sender_forward, stream_forward);
-        let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
-        packet_collector.read_all_packets_from_stream();
-        match packet_collector.write_buffer_to_remote() {
-            Some(_) => {},
-            None => { debug!{crate::LOGGER, "Connection closed"}; }
-        };
-        packet_collector.flush_stream_to_remote();
-        md.tag_response_end_time();
-        md.tag_request_start_time();
-        info!(crate::LOGGER, "TRAFFIC LOG [EGRESS] [{}] [Packets: {}]", md.id, packet_collector.packet_count);
-        debug!(crate::LOGGER, "REQUEST CONTENT [EGRESS]: {}", packet_collector.buffer_to_string().chars().as_str());
-        debug!(crate::LOGGER, "Remote closed connection");
-    }
-    fn forward_thread_handler(stream_forward: TcpStream, mut sender_forward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
-        let mut stream_forward: BufReader<TcpStream> = BufReader::new(stream_forward);
-        let mut buffer: &[Byte];
-        let mut buffer_length: usize;
-        loop {
-            buffer = stream_forward.fill_buf().unwrap();
-            buffer_length = buffer.len();
-            if buffer.is_empty() {
-                debug!(crate::LOGGER, "Client closed connection");
-                return;
-            }
-            sender_forward.write_all(&buffer).expect("Failed to write to remote");
-            let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
-            debug!(crate::LOGGER, "REQUEST CONTENT [EGRESS]: {}", String::from_utf8_lossy(&buffer).chars().as_str());
-            info!(crate::LOGGER, "TRAFFIC LOG [EGRESS] [{}]", md.id);
-            md.tag_request_start_time();
-            sender_forward.flush().expect("Failed to flush remote");
-            stream_forward.consume(buffer_length);
-        }
-    }
-    // "Progressive" refers to forwarding all packets as they come through
-    fn backward_thread_progressive_handler(mut stream_backward: TcpStream, mut sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
-        let mut sender_backward: BufReader<TcpStream> = BufReader::new(sender_backward);
-        let mut buffer: &[Byte];
-        let mut length: usize;
-        loop {
-            buffer = sender_backward.fill_buf().unwrap();
-            length = buffer.len();
-            let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
-            if buffer.is_empty() {
-                md.tag_response_end_time();
-                info!(crate::LOGGER, "TRAFFIC LOG [INGRESS] [{}] [Packets: {}] [{} ms]", md.id, md.response_packet_count, md.get_request_response_duration());
-                debug!(crate::LOGGER, "Remote closed connection");
-                return;
-            }
-            if stream_backward.write_all(&buffer).is_err() {
-                debug!(crate::LOGGER, "Client closed connection");
-                return;
-            }
+            let forward_fn: ThreadHandlerMethod = match handler_type {
+                ThreadHandlerType::CAPTURE => ThreadHandler::forward_thread_capture_handler,
+                ThreadHandlerType::PROGRESSIVE => ThreadHandler::forward_thread_progressive_handler
+            };
 
-            debug!(crate::LOGGER, "RESPONSE CONTENT [EGRESS]: {}", String::from_utf8_lossy(&buffer).chars().as_str());
-            inc!{md.response_packet_count};
-            stream_backward.flush().expect("Failed to flush locally");
-            sender_backward.consume(length);
+            let backward_fn: ThreadHandlerMethod = match handler_type {
+                ThreadHandlerType::CAPTURE => ThreadHandler::backward_thread_capture_handler,
+                ThreadHandlerType::PROGRESSIVE => ThreadHandler::backward_thread_progressive_handler
+            };
+
+            thread::spawn(move || forward_fn(stream_forward, sender_forward, metadata_clone_forward));
+            thread::spawn(move || backward_fn(stream_backward, sender_backward, metadata_clone_backward));
         }
-    }
-    // "Capture" refers to reading all packets and sending as one packet to client
-    fn backward_thread_capture_handler(mut stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
-        let mut packet_collector: StreamPacketCollector = StreamPacketCollector::new(stream_backward, sender_backward);
-        let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
-        packet_collector.read_all_packets_from_stream();
-        match packet_collector.write_buffer_to_remote() {
-            Some(_) => {},
-            None => { debug!{crate::LOGGER, "Connection closed"}; }
-        };
-        packet_collector.flush_stream_to_remote();
-        md.tag_response_end_time();
-        info!(crate::LOGGER, "TRAFFIC LOG [INGRESS] [{}] [Packets: {}] [{} ms]", md.id, packet_collector.packet_count, md.get_request_response_duration());
-        debug!(crate::LOGGER, "RESPONSE CONTENT [INGRESS]: {}", packet_collector.buffer_to_string().chars().as_str());
-        debug!(crate::LOGGER, "Remote closed connection");
     }
     pub fn start(&mut self, binding_set: bindingset::BindingSet) {
         let binding_count: usize = binding_set.bindings.len();

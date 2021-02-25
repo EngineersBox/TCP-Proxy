@@ -1,8 +1,8 @@
 use std::io::{Write, Read, BufReader, BufRead};
 use std::net::TcpStream;
+use std::borrow::Borrow;
 
 use crate::{try_except_return_default, try_except_return, inc, option_same_block};
-use std::borrow::Borrow;
 
 type Byte = u8;
 
@@ -53,6 +53,7 @@ impl StreamPacketCollector {
         self.packet_content_buffer.as_slice()
     }
     pub fn buffer_to_string(&mut self) -> String {
+        String::from("").as_str();
         String::from_utf8_lossy(self.packet_content_buffer.as_slice()).into_owned()
     }
     pub fn empty_buffer(&mut self) {

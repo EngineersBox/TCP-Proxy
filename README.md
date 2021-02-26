@@ -17,8 +17,8 @@ Connections are defined via a JSON file describing:
 	"bindings": [
 		{
 			"name": "<STRING>",
-			"from": "<IPv4:PORT>",
-			"to": "<IPv4:PORT>",
+			"from": "<ADDR:PORT>",
+			"to": "<ADDR:PORT>",
 			"rules": {
 				"ingress": [
 					{
@@ -71,7 +71,7 @@ It is important to note that different fields in the rules are required dependin
 		{
 			"name": "test1",
 			"from": "127.0.0.1:3000",
-			"to": "127.0.0.1:8000",
+			"to": "google.com:80",
 			"rules": {
 				"ingress": [
 					{

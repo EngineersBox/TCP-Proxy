@@ -2,8 +2,8 @@
 	"bindings": [
 		{
 			"name": "test1",
-			"from": "127.0.0.1:3000",
-			"to": "127.0.0.1:8000",
+			"from": "localhost:3000",
+			"to": "google.com:80",
 			"rules": {
 				"ingress": [
 					{
@@ -30,8 +30,8 @@
 		},
 		{
 			"name": "test1",
-			"from": "127.0.0.1:4000",
-			"to": "127.0.0.1:4000",
+			"from": "localhost:4000",
+			"to": "localhost:8000",
 			"rules": {
 				"ingress": [
 					{

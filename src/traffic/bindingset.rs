@@ -141,28 +141,19 @@ impl RuleSet {
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct BindingRule {
     pub name: String,
-    pub from: SocketAddr,
-    pub to: SocketAddr,
+    pub from: String,
+    pub to: String,
     pub rules: RuleSet
 }
 
 impl BindingRule {
-    pub fn new(name: String, from: SocketAddr, to: SocketAddr, rules: RuleSet) -> BindingRule {
+    pub fn new(name: String, from: String, to: String, rules: RuleSet) -> BindingRule {
         BindingRule {
             name,
             from,
             to,
             rules,
         }
-    }
-
-    pub fn from_to_string(from_str: String, to_str: String) -> BindingRule {
-        BindingRule::new(
-            uuid::Uuid::new_v4().to_string(),
-            from_str.parse::<SocketAddr>().unwrap(),
-            to_str.parse::<SocketAddr>().unwrap(),
-            RuleSet::new(),
-        )
     }
 }
 
@@ -230,8 +221,8 @@ fn assemble_bindings_from_json(json_val: JSONBindingSet) -> HashSet<BindingRule>
         }
         binding_rule_set.insert(BindingRule::new(
             binding.name,
-            binding.from.parse::<SocketAddr>().unwrap(),
-            binding.to.parse::<SocketAddr>().unwrap(),
+            binding.from,
+            binding.to,
             ruleset,
         ));
     }

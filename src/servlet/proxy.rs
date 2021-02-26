@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::net::{TcpListener, TcpStream};
 use rayon::ThreadPool;
 use std::thread;
@@ -9,6 +9,8 @@ use crate::traffic::bindingset;
 use crate::servlet::request_metadata::RequestMetadata;
 use crate::{try_except_return, inc, ternary};
 use crate::servlet::threading::thread_handler::{ThreadHandler, ThreadHandlerType, ThreadHandlerMethod};
+use crate::traffic::bindingset::BindingRule;
+use std::vec::IntoIter;
 
 pub struct ListenerBinding {
     pub id: u64,
@@ -60,8 +62,11 @@ impl Proxy {
     }
     pub fn initialize_bindings(&mut self, rule_set: bindingset::BindingSet) {
         let mut incremental_listener_id: u64 = 0;
-        for rule in rule_set.bindings {
-            let (proxy_addr, to_addr) = (rule.from, rule.to);
+        for mut rule in rule_set.bindings {
+            let (proxy_addr, to_addr) = (
+                Proxy::resolve_binding_address(rule.from.as_str()),
+                Proxy::resolve_binding_address(rule.to.as_str())
+            );
             let mut listener: TcpListener = try_except_return!{TcpListener::bind(proxy_addr.to_string()), "Unable to bind proxy address"};
             debug!{crate::LOGGER, "Binding listener [{}] to connection: {} <-> {} ", incremental_listener_id, rule.from, rule.to};
             self.listeners.push(ListenerBinding{
@@ -74,6 +79,19 @@ impl Proxy {
             self.thread_pool.spawn(move || Proxy::invoke_acceptor_handler(&mut listener, to_addr, handler_type));
             inc!{incremental_listener_id};
         }
+    }
+    fn resolve_binding_address(binding_address: &str) -> SocketAddr {
+        let mut potential_addr_from: IntoIter<SocketAddr> = binding_address.to_socket_addrs()
+            .expect(format!("Could not resolve {} to SocketAddr", binding_address).as_str());
+        if potential_addr_from.len() > 1 {
+            info!{crate::LOGGER, "Multiple SocketAddr resolutions [{}] -> {:?}, defaulting to [{}]",
+                binding_address,
+                potential_addr_from.as_slice(),
+                potential_addr_from.as_slice()[0]
+            };
+        }
+        potential_addr_from.next()
+            .expect(format!("Binding address [{}] could not be resolved to SocketAddr", binding_address).as_str())
     }
     fn invoke_acceptor_handler(listener_forward: &mut TcpListener, proxy_to: SocketAddr, handler_type: ThreadHandlerType) {
         loop {

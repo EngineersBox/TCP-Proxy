@@ -66,8 +66,12 @@ lazy_static! {
 }
 
 fn main() {
-    let properties: config::Config = config::Config::new(String::from("config/config.properties"));
-    let mut binding_set: bindingset::BindingSet = bindingset::BindingSet::from_file(String::from("1"), String::from("config/traffic.json"));
+    let mut properties: config::Config = config::Config::new("config/config.properties");
+    properties.read();
+    let mut binding_set: bindingset::BindingSet = bindingset::BindingSet::from_file(
+        String::from("1"),
+        String::from("config/traffic.json")
+    );
     binding_set.set_applied(true);
     let mut tcp_proxy: proxy::Proxy = proxy::Proxy::new(properties);
     tcp_proxy.start(binding_set);

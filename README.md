@@ -120,9 +120,10 @@ Feb 26 23:59:47.478 DEBG Creating proxy thread pool of size: 50
 Feb 26 23:59:47.479 INFO Initializing proxy 2 binding(s)
 Feb 26 23:59:47.482 INFO Multiple SocketAddr resolutions [localhost:3000] -> [127.0.0.1:3000, [::1]:3000], defaulting to [127.0.0.1:3000]
 Feb 26 23:59:47.516 DEBG Binding listener [0] to connection: localhost:3000 <-> google.com:80 
-Feb 26 23:59:47.516 DEBG Invoked acceptor thread for listener [0] using hadler type [could not read file: PROGRESSIVE]
+Feb 26 23:59:47.516 DEBG Invoked acceptor thread for listener [0] using hadler type [PROGRESSIVE]
 Feb 26 23:59:47.517 INFO Starting main listener loop
 Feb 26 23:59:59.604 DEBG New connection
+Feb 26 23:59:59.621 INFO TRAFFIC LOG [EGRESS] [96750fe7-80be-4789-810c-fea6fc951808]
 Feb 26 23:59:59.637 DEBG REQUEST CONTENT [EGRESS]:
 
 GET / HTTP/1.1
@@ -131,8 +132,8 @@ User-Agent: curl/7.64.1
 Accept: */*
 X-Test-Header: somevalue
 
-Feb 26 23:59:59.637 INFO TRAFFIC LOG [EGRESS] [96750fe7-80be-4789-810c-fea6fc951808]
-Feb 26 23:59:59.794 DEBG RESPONSE CONTENT [EGRESS]:
+Feb 26 23:59:59.637 INFO TRAFFIC LOG [INGRESS] [96750fe7-80be-4789-810c-fea6fc951808]
+Feb 26 23:59:59.794 DEBG RESPONSE CONTENT [INGRESS] [96750fe7-80be-4789-810c-fea6fc951808]:
 
 HTTP/1.1 301 Moved Permanently
 Location: http://www.google.com:3000/
@@ -152,6 +153,6 @@ The document has moved
 <A HREF="http://www.google.com:3000/">here</A>.
 </BODY></HTML>
 
-Feb 26 23:59:59.794 DEBG Client closed connection
+Feb 26 23:59:59.794 DEBG Client closed connection [96750fe7-80be-4789-810c-fea6fc951808]
 
 ```

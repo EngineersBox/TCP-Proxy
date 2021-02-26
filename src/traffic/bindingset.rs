@@ -36,6 +36,7 @@ pub enum HttpMethod {
     PATCH,
     PUT,
     OPTIONS,
+    UPDATE
 }
 
 impl FromStr for HttpMethod {
@@ -48,6 +49,7 @@ impl FromStr for HttpMethod {
             "PATCH"  => Ok(HttpMethod::PATCH),
             "PUT"  => Ok(HttpMethod::PUT),
             "OPTIONS"  => Ok(HttpMethod::OPTIONS),
+            "UPDATE" => Ok(HttpMethod::UPDATE),
             _ => Ok(HttpMethod::GET),
         }
     }

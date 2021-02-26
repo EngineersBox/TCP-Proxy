@@ -29,7 +29,7 @@ Connections are defined via a JSON file describing:
 								"value": "<STRING>"
 							}
 						],
-                        "url_wildcard": "<STRING>",
+                        "url_wildcard": "<REGEX>",
                         "method_enum": "<GET | POST | PATCH | PUT | OPTIONS | UPDATE>",
                         "version_float": "<FLOAT>"
 					}
@@ -43,7 +43,7 @@ Connections are defined via a JSON file describing:
 								"value": "<STRING>"
 							}
 						],
-						"url_wildcard": "<STRING>",
+						"url_wildcard": "<REGEX>",
 						"method_enum": "<GET | POST | PATCH | PUT | OPTIONS | UPDATE>",
 						"version_float": "<FLOAT>"
 					}

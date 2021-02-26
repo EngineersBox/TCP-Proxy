@@ -91,7 +91,7 @@ It is important to note that different fields in the rules are required dependin
 					},
 					{
 						"kind": "URL",
-						"url_wildcard": "https\\:\\/\\/.\\.instaclustr\\.com"
+						"url_wildcard": "https://.*\\.instaclustr\\.com"
 					}
 				]
 			}

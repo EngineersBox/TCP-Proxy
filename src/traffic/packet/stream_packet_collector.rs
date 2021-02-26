@@ -1,8 +1,7 @@
-use std::io::{Write, Read, BufReader, BufRead};
+use std::io::{Write, BufReader, BufRead};
 use std::net::TcpStream;
-use std::borrow::Borrow;
 
-use crate::{try_except_return_default, try_except_return, inc, option_same_block};
+use crate::{try_except_return, inc, option_same_block};
 
 type Byte = u8;
 
@@ -14,7 +13,7 @@ pub struct StreamPacketCollector {
 }
 
 impl StreamPacketCollector {
-    pub fn new(mut receiver: TcpStream, sender: TcpStream) -> StreamPacketCollector {
+    pub fn new(receiver: TcpStream, sender: TcpStream) -> StreamPacketCollector {
         StreamPacketCollector {
             packet_content_buffer: vec![],
             receiver,

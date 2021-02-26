@@ -1,16 +1,14 @@
 use std::net::SocketAddr;
 use std::net::{TcpListener, TcpStream};
 use rayon::ThreadPool;
-use std::{thread, fmt};
+use std::thread;
 use std::sync::{Arc, Mutex};
-use std::str::FromStr;
-use std::borrow::Borrow;
 
 use crate::configuration::config::Config;
 use crate::traffic::bindingset;
 use crate::servlet::request_metadata::RequestMetadata;
 use crate::{try_except_return, inc, ternary};
-use crate::servlet::threading::thread_handler::ThreadHandler;
+use crate::servlet::threading::thread_handler::{ThreadHandler, ThreadHandlerType, ThreadHandlerMethod};
 
 pub struct ListenerBinding {
     pub id: u64,
@@ -20,43 +18,13 @@ pub struct ListenerBinding {
 
 
 pub struct Proxy {
-    pub thread_handler_type: ThreadHandlerType,
+    pub(crate) thread_handler_type: ThreadHandlerType,
     pub thread_pool: ThreadPool,
     pub listeners: Vec<ListenerBinding>
 }
 
-type Byte = u8;
-
 static THREAD_POOL_SIZE_KEY: &'static str = "thread_pool_size";
 static HANDLER_TYPE_KEY: &'static str = "thread_handler_type";
-
-#[derive(Clone, Copy)]
-pub enum ThreadHandlerType {
-    CAPTURE,
-    PROGRESSIVE,
-}
-
-impl fmt::Display for ThreadHandlerType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "could not read file: {}", match self {
-            ThreadHandlerType::CAPTURE => "CAPTURE",
-            ThreadHandlerType::PROGRESSIVE => "PROGRESSIVE"
-        })
-    }
-}
-
-impl FromStr for ThreadHandlerType {
-    type Err = ();
-    fn from_str(input: &str) -> Result<ThreadHandlerType, Self::Err> {
-        match input {
-            "CAPTURE"  => Ok(ThreadHandlerType::CAPTURE),
-            "PROGRESSIVE"  => Ok(ThreadHandlerType::PROGRESSIVE),
-            _ => Ok(ThreadHandlerType::CAPTURE),
-        }
-    }
-}
-
-type ThreadHandlerMethod = fn(TcpStream, TcpStream, Arc<Mutex<RequestMetadata>>);
 
 impl Proxy {
     pub fn new(configuration: Config) -> Proxy {
@@ -109,29 +77,48 @@ impl Proxy {
     }
     fn invoke_acceptor_handler(listener_forward: &mut TcpListener, proxy_to: SocketAddr, handler_type: ThreadHandlerType) {
         loop {
-            let (stream_forward, _addr) = listener_forward.accept().expect("Failed to accept connection");
+            let (stream_forward, _addr) = try_except_return!{listener_forward.accept(), "Failed to accept connection"};
             debug!(crate::LOGGER, "New connection");
 
             let sender_forward: TcpStream = try_except_return!{TcpStream::connect(proxy_to), "Failed to bind"};
             let sender_backward: TcpStream = try_except_return!{sender_forward.try_clone(), "Failed to clone stream"};
             let stream_backward: TcpStream = try_except_return!{stream_forward.try_clone(), "Failed to clone stream"};
-
             let metadata: Arc<Mutex<RequestMetadata>> = Arc::new(Mutex::new(RequestMetadata::new()));
-            let metadata_clone_forward: Arc<Mutex<RequestMetadata>> = metadata.clone();
-            let metadata_clone_backward: Arc<Mutex<RequestMetadata>> = metadata.clone();
 
-            let forward_fn: ThreadHandlerMethod = match handler_type {
-                ThreadHandlerType::CAPTURE => ThreadHandler::forward_thread_capture_handler,
-                ThreadHandlerType::PROGRESSIVE => ThreadHandler::forward_thread_progressive_handler
+            macro_rules! new_acceptor {
+                ($stream:expr,
+                 $sender:expr,
+                 $metadata:expr,
+                 $capture_handler:expr,
+                 $progressive_handler:expr,
+                 $handler_type:expr) => {
+                    let metadata_clone: Arc<Mutex<RequestMetadata>> = $metadata.clone();
+
+                    let handler_fn: ThreadHandlerMethod = match $handler_type {
+                        ThreadHandlerType::CAPTURE => $capture_handler,
+                        ThreadHandlerType::PROGRESSIVE => $progressive_handler
+                    };
+
+                    thread::spawn(move || handler_fn($stream, $sender, metadata_clone));
+                }
+            }
+
+            new_acceptor!{
+                stream_forward,
+                sender_forward,
+                metadata,
+                ThreadHandler::forward_thread_capture_handler,
+                ThreadHandler::forward_thread_progressive_handler,
+                handler_type
             };
-
-            let backward_fn: ThreadHandlerMethod = match handler_type {
-                ThreadHandlerType::CAPTURE => ThreadHandler::backward_thread_capture_handler,
-                ThreadHandlerType::PROGRESSIVE => ThreadHandler::backward_thread_progressive_handler
+            new_acceptor!{
+                stream_backward,
+                sender_backward,
+                metadata,
+                ThreadHandler::backward_thread_capture_handler,
+                ThreadHandler::backward_thread_progressive_handler,
+                handler_type
             };
-
-            thread::spawn(move || forward_fn(stream_forward, sender_forward, metadata_clone_forward));
-            thread::spawn(move || backward_fn(stream_backward, sender_backward, metadata_clone_backward));
         }
     }
     pub fn start(&mut self, binding_set: bindingset::BindingSet) {

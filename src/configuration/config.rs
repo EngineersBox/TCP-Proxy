@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use java_properties::{PropertiesIter, PropertiesError, read};
+use java_properties::read;
 use std::fs::File;
 use std::io::BufReader;
 use crate::try_except_return_default;

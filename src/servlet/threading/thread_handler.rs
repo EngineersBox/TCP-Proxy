@@ -5,13 +5,43 @@ use std::io::{BufReader, BufRead, Write};
 use crate::traffic::packet::stream_packet_collector::StreamPacketCollector;
 use crate::servlet::request_metadata::RequestMetadata;
 use crate::inc;
+use core::fmt;
+use std::str::FromStr;
+
+#[derive(Clone, Copy)]
+pub(crate) enum ThreadHandlerType {
+    CAPTURE,
+    PROGRESSIVE,
+}
+
+impl fmt::Display for ThreadHandlerType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "could not read file: {}", match self {
+            ThreadHandlerType::CAPTURE => "CAPTURE",
+            ThreadHandlerType::PROGRESSIVE => "PROGRESSIVE"
+        })
+    }
+}
+
+impl FromStr for ThreadHandlerType {
+    type Err = ();
+    fn from_str(input: &str) -> Result<ThreadHandlerType, Self::Err> {
+        match input {
+            "CAPTURE"  => Ok(ThreadHandlerType::CAPTURE),
+            "PROGRESSIVE"  => Ok(ThreadHandlerType::PROGRESSIVE),
+            _ => Ok(ThreadHandlerType::CAPTURE),
+        }
+    }
+}
+
+pub(crate) type ThreadHandlerMethod = fn(TcpStream, TcpStream, Arc<Mutex<RequestMetadata>>);
 
 pub(crate) struct ThreadHandler;
 
 type Byte = u8;
 
 impl ThreadHandler {
-    pub fn forward_thread_capture_handler(stream_forward: TcpStream, mut sender_forward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
+    pub fn forward_thread_capture_handler(stream_forward: TcpStream, sender_forward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
         let mut packet_collector: StreamPacketCollector = StreamPacketCollector::new(sender_forward, stream_forward);
         let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
         packet_collector.read_all_packets_from_stream();
@@ -47,7 +77,7 @@ impl ThreadHandler {
         }
     }
     // "Progressive" refers to forwarding all packets as they come through
-    pub fn backward_thread_progressive_handler(mut stream_backward: TcpStream, mut sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
+    pub fn backward_thread_progressive_handler(mut stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
         let mut sender_backward: BufReader<TcpStream> = BufReader::new(sender_backward);
         let mut buffer: &[Byte];
         let mut length: usize;
@@ -73,7 +103,7 @@ impl ThreadHandler {
         }
     }
     // "Capture" refers to reading all packets and sending as one packet to client
-    pub fn backward_thread_capture_handler(mut stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
+    pub fn backward_thread_capture_handler(stream_backward: TcpStream, sender_backward: TcpStream, metadata: Arc<Mutex<RequestMetadata>>) {
         let mut packet_collector: StreamPacketCollector = StreamPacketCollector::new(stream_backward, sender_backward);
         let mut md: MutexGuard<RequestMetadata> = metadata.lock().unwrap();
         packet_collector.read_all_packets_from_stream();

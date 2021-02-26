@@ -2,8 +2,6 @@ use std::net::SocketAddr;
 use std::collections::HashSet;
 use std::vec::Vec;
 use std::fs;
-use serde::{Deserialize, Serialize};
-use regex::Regex;
 use std::str::FromStr;
 use crate::traffic::json_mappings::*;
 
